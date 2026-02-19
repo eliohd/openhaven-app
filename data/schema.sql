@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS tbl_Connections (
 -- stores user information for access to the dahsboard
 CREATE TABLE IF NOT EXISTS tbl_Users (
     userId INTEGER PRIMARY KEY AUTOINCREMENT,
-    username VARCHAR(50) NOT NULL,
+    username VARCHAR(50) NOT NULL UNIQUE,
     passwordHash VARCHAR(255) NOT NULL,
     accountType TEXT NOT NULL CHECK(accountType IN ('ADMIN', 'MEMBER'))
 );

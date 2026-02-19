@@ -110,8 +110,3 @@ class APIclient:
         
         #want the raw json
         return response
-
-    # close the http client i created in the constructor above, that way i prevent opening many http sessions
-    def close(self):
-        self._client.close()
-
