@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS tbl_Clients (
     ipAddress VARCHAR(15) NOT NULL,
     macAddress VARCHAR(17) UNIQUE NOT NULL,
     active BOOLEAN DEFAULT TRUE,
-    connectedAt DATETIME NOT NULL
+    connectedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- tbl_Connections
@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS tbl_Connections (
 -- tbl_Users
 -- stores user information for access to the dahsboard
 CREATE TABLE IF NOT EXISTS tbl_Users (
-    username VARCHAR(50) PRIMARY KEY,
+    userId INTEGER PRIMARY KEY AUTOINCREMENT,
+    username VARCHAR(50) NOT NULL,
     passwordHash VARCHAR(255) NOT NULL,
     accountType TEXT NOT NULL CHECK(accountType IN ('ADMIN', 'MEMBER'))
 );
@@ -51,14 +52,6 @@ CREATE TABLE IF NOT EXISTS tbl_AuditLogs (
     logMessage TEXT NOT NULL,
     FOREIGN KEY (accessPointId) REFERENCES tbl_APdevices(accessPointId) ON DELETE SET NULL,
     FOREIGN KEY (clientId) REFERENCES tbl_Clients(clientId) ON DELETE SET NULL
-    -- log should only reference a client or an access point, not both
-    -- uses a check constraint to make sure only one is not null, or both are null
-    -- both can be null if parent node (client or ap) is deleted, or if it is just a general log
-    CHECK (
-        (accessPointId IS NOT NULL AND clientId IS NULL) OR
-        (accessPointId IS NULL AND clientId IS NOT NULL) OR
-        (accessPointId IS NULL AND clientId IS NULL)
-    )
 );
 
 -- tbl_TrafficSamples
