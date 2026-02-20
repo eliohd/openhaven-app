@@ -31,24 +31,13 @@ class APIclient:
         headers = self._getHeaders()
         # forms base url using endpoint passed in
         url = f"{self._baseURL}/{endpoint}"
+        response = self._client.get(url, headers=headers)
 
-        # i use a try except statement to catch any errors while fetching data
-        try:
-            response = self._client.get(url, headers=headers)
-
-            # code 200 would mean it is successful, i can correctly return the response json
-            if response.status_code == 200:
-                return response.json()
-            else: # otherwise i can retrieve what response code i actually got, and the message with it
-                print(f"Request to network api failed: {response.status_code}")
-                print(f"Response: {response.text}")
-                return None
-            
-        # catch the exception message as well if it fails altogether, this would mean somethng is fundamentally wrong with the request method
-        except Exception as exceptionMessage:
-            print(f"Error making a request: {exceptionMessage}" )
-            return None
-
+        # code 200 would mean it is successful, i can correctly return the response json
+        if response.status_code != 200:
+            # when it is not 200, i raise an exception error to the parent method that calls this protected method.
+            raise Exception(f"Request to network api failed: {response.status_code}, {response.text}")
+        return response.json()
 
     # fetching all of the required data as set out in the hierarchy chart in 2.5, and the flowcharts in 2.2.2
     # these are all public methods

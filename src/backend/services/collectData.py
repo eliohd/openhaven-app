@@ -4,8 +4,6 @@ from .unifi_api import APIclient
 class collectData:
 
     def __init__(self, apiClient = APIclient):
-        if apiClient is None:
-            raise ValueError("API client instance is required")
         self._api = apiClient
 
     def _collectTrafficSample(self, id, state):

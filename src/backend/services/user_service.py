@@ -51,28 +51,28 @@ class UserService():
                 return True
             else:
                 return False
-            
-        except sqlite3.Error as errorMessage:
-            print(f"Error checking for username availability: {errorMessage}")
         finally:
             con.close()
 
     def createUser(self, username, password, accessLevel):
         if accessLevel not in ['ADMIN', 'MEMBER']:
             return {
-                'successful': False,
-                'errors': ['Invalid user access level.']
+                "successful": False,
+                "message": "User access level must be ADMIN or MEMBER.",
+                "errors": ['Invalid user access level.']
             }
         if self._userExists(username):
             return {
-                'successful': False,
-                'errors': ['This username already exists.']
+                "successful": False,
+                "message": "This username already exists.",
+                "errors": ['This username already exists.']
             }
         valid, errors = self._validatePassword(password)
         if not valid:
             return {
-                'successful': False,
-                'errors': errors
+                "successful": False,
+                "message": "Requirements for password not met",
+                "errors": errors
             }
         
         # from here onwards the account details are verified and can now create the user
@@ -84,14 +84,18 @@ class UserService():
                 '''INSERT INTO tbl_Users (username, passwordHash, accessLevel) VALUES (?, ?, ?)''',
                 (username.lower(), hashedPassword, accessLevel)
             )
-
             con.commit()
             return {
-                'successful': True,
-                'errors': None
+                "successful": True,
+                "message": f"User {username} created successfully.",
+                "errors": []
             }
-        except sqlite3.Error as errorMessage:
-            print(f"Error creating new user: {errorMessage}")
+        except Exception as error:
+            return {
+                "successful": False,
+                "message": f"Error creating new user.",
+                "errors": [str(error)]
+            }
         finally:
             con.close()
 
@@ -103,30 +107,32 @@ class UserService():
                 (username,)
             )
 
-            result = cur.fetchone()
+            result = result.fetchone()
             if not result:
                 return {
-                    'successful': False,
-                    'errors': ['Username does not exist.'] 
+                    "successful": False,
+                    "message": "Username or password is invalid.",
+                    "errors": ["Username or password is invalid."] 
                 }
             
             db_userId, db_username, passwordHash, accessLevel = result
             ph = PasswordHasher()
-            try:
-                ph.verify(passwordHash, password)
-                return {
-                    'successful': True,
-                    'userDetails': {
-                        'userId': db_userId,
-                        'username': db_username,
-                        'accessLevel': accessLevel
-                    }
+            ph.verify(passwordHash, password)
+            return {
+                "successful": True,
+                "message": f"Login successful, welcome {db_username}!",
+                "errors": [],
+                "data": {
+                    'username': db_username,
+                    'accessLevel': accessLevel
                 }
-            except Exception:
-                return {
-                    'successful': False,
-                    'errors': ['Username or password is invalid.', 'You can ask the admin to update your details or create a member account.']
-                }
+            }
+        except Exception as error:
+            return {
+                "successful": False,
+                "message": "Username or password is invalid.",
+                "errors": [str(error)]
+            }
         finally:
             con.close()
 
@@ -141,11 +147,26 @@ class UserService():
 
             if result:
                 return {
-                    'userId': result[0],
-                    'username': result[1],
-                    'accessLevel': result[2]
+                    "successful": True,
+                    "message": "User found.",
+                    "errors": [],
+                    "data": {
+                        "userId": result[0],
+                        "username": result[1],
+                        "accessLevel": result[2]
+                    },
                 }
-            return None
+            return {
+                "successful": False,
+                "message": "User not found.",
+                "errors": [],
+            }
+        except Exception as error:
+            return {
+                "successful": False,
+                "message": "Error - user could not be found.",
+                "errors": [str(error)]
+            }
         finally:
             con.close()
 
@@ -155,15 +176,20 @@ class UserService():
             result = cur.execute(
                 '''SELECT userId, username, accessLevel FROM tbl_Users ORDER BY dateCreated DESC'''
             )
-            users = result.fetchall()
+            result = result.fetchall()
             users = []
-            for user in users:
+            for user in result:
                 users.append({
                     'userId': user[0],
                     'username': user[1],
                     'accessLevel': user[2]
                 })
-            return users
+            return {
+                "successful": True,
+                "message": "Users retrieved.",
+                "errors": [],
+                "data": users
+            }
         finally:
             con.close()
 
@@ -174,52 +200,67 @@ class UserService():
                 '''DELETE FROM tbl_Users WHERE username = ?''',
                 (username,)
             )
+            con.commit()
             return({
-                'successful': True,
-                'errors': None
+                "successful": True,
+                "message": f"{username} was deleted successfully.",
+                "errors": [],
                 })
-        except sqlite3.Error as errorMessage:
-            print(f"Error trying to delete user: {errorMessage}")
+        except Exception as error:
+            return {
+                "successful": False,
+                "message": f"Error trying to delete user.",
+                "errors": [str(error)]
+            }
         finally:
             con.close()
     
     def updateUser(self, username, newUsername=None, newPassword=None):
+        if not self._userExists(username):
+            return {
+                "successful": False,
+                "message": "User does not exist.",
+                "errors": ["No user with username exists."]
+            }
+        if newUsername and self._userExists(newUsername):
+            return {
+                "successful": False,
+                "message": 'This username already exists.',
+                "errors": ["A user with the new username exists already."]
+            }
+        if newPassword:
+            valid, errors = self._validatePassword(newPassword)
+            if not valid:
+                return {
+                    "successful": False,
+                    "message": "Password requirements have not been met.",
+                    "errors": errors
+                }
+            
         cur, con = self._dbConnection()
         try:
-            if newPassword != None:
-                valid, errors = self._validatePassword(newPassword)
-                if not valid:
-                    return {
-                        'successful': False,
-                        'errors': errors
-                    }
-                newPassword = self._hashPassword(newPassword)
+            if newPassword:
+                hashedPassword = self._hashPassword(newPassword)
                 cur.execute(
                     '''UPDATE tbl_Users SET passwordHash = ? WHERE LOWER(username) = LOWER(?)''',
-                    (newPassword, username)
+                    (hashedPassword, username)
                 )
-                con.commit()
-
-            if newUsername != None:
-                if self._userExists(newUsername):
-                    return {
-                        'successful': False,
-                        'errors': ['This username already exists.']
-                    }
+            if newUsername:
                 cur.execute(
                     '''UPDATE tbl_Users SET username = ? WHERE LOWER(username) = LOWER(?)''',
-                    (newUsername, username,)
+                    (newUsername.lower(), username,)
                 )
-                con.commit()
+            con.commit()
             return {
-                'successful': True,
-                'errors': None
+                "successful": True,
+                "message": "Successfully updated user.",
+                "errors": []
             }
-        except sqlite3.Error as errorMessage:
-            print(f"Error while updating user's username: {errorMessage}")
+        except Exception as error:
             return {
-                'successful': False,
-                'errors': ['Error occurred while updating the user\'s username.']
+                "successful": False,
+                "message": "Error while updating user.",
+                "errors": [str(error)]
             }
         finally:
             con.close()

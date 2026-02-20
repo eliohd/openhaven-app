@@ -47,7 +47,6 @@ CREATE TABLE IF NOT EXISTS tbl_AuditLogs (
     auditLogId INTEGER PRIMARY KEY AUTOINCREMENT,
     accessPointId CHAR(36),
     clientId CHAR(36),
-    -- deviceType was removed as this can be derived from whether the clientId or accessPointId is not null
     dateCreated DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, -- https://stackoverflow.com/questions/10720486/date-timestamp-to-record-when-a-record-was-added-to-the-table
     logMessage TEXT NOT NULL,
     FOREIGN KEY (accessPointId) REFERENCES tbl_APdevices(accessPointId) ON DELETE SET NULL,

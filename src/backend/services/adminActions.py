@@ -43,8 +43,8 @@ class adminActions:
             result = result.fetchone() # gets the result tuple
             # making sure there is a returned result
             if not result:
-                print(f"No access point found with id {id} - audit log failed.")
-                return
+                # will raise an error which will be caught by the parent method which calls it.
+                raise ValueError(f"No accessPoint with id {id}.")
 
             apName = result[0] # extract the hostname from the result tuple
             message = f"Access point {apName} was restarted." # create the message with the access point's name just fetched
@@ -61,8 +61,8 @@ class adminActions:
             result = result.fetchone() # gets the result tuple
             #again making sure that there is a result returned
             if not result:
-                print(f"Wifi broadcast with id {id} not found - audit log failed.")
-                return
+                # again will raise a value error to be caught by the parent method calling it
+                raise ValueError(f"Wifi broadcast with id {id} not found - audit log failed.")
             ssid = result[0] # extract the ssid from the result tuple
             message = f"SSID broadcasting for {ssid} has been {'disabled' if hideNameVal else 'enabled'}." # create the message with the wifi broadcast's ssid just fetched
             cur.execute(
@@ -81,95 +81,95 @@ class adminActions:
         headers = self._getHeaders() # get the headers from the protected method
         url = f"{self._baseURL}/{endpoint}" # form the full endpoint url
 
+        cur, con = self._dbConnection() # establish connection to database for the audit log Method
         try:
             response = self._client.post(url, headers=headers, content=payload) # actually make the POST request to UniFi Network API
-            if response.status_code == 200: # if a success
-                cur, con = self._dbConnection() # establish connection to database for the audit log Method
-                try:
-                    self._createNetworkAuditLog(cur, con, deviceId, "AP")
-                    con.commit() #commits transaction from the protected method above
-                except sqlite3.Error as errorMessage:
-                    print(f"Error while creating network audit log record: {errorMessage}")
-                finally:
-                    con.close() # close the database connection
-                return {
-                    "successful": True,
-                    "message": "Access point is restarting."
-                } # return success message to main program. The frontend can display this message to the admin within the admin actions dashboard.
-            else:
+            if response.status_code != 200: # if not successful
                 return {
                     "successful": False,
-                    "message": f"Request to restart access point failed: {response.status_code}, {response.text}"
+                    "message": f"Request to restart access point failed.",
+                    "errors": [f"Status code: {response.status_code}", f"Response: {response.text}"]
                 } # handles other, unsuccessful response codes from UniFi.
-        except httpx.RequestError as errorMessage: # Where the request fails altogether.
+            
+            self._createNetworkAuditLog(cur, con, deviceId, "AP")
+            con.commit() #commits transaction from the protected method above
+            return { # return success message
+            "successful": True,
+            "message": "Access point is restarting.",
+            "errors": []
+        } # return success message to main program. The frontend can display this message to the admin within the admin actions dashboard.
+        except Exception as error: # Where the request fails altogether.
             return {
                 "successful": False,
-                "message": f"Restarting the access point failed: {errorMessage}"
+                "message": f"Restarting the access point failed.",
+                "errors": [str(error)]
             }
+        finally:
+            con.close() # close the database connection
 
     # this is the Method to enable/disable ssid broadcasting for a wifi broadcast which is stored in tbl_WifiBroadcasts
     def toggleBroadcasting(self, wifiBroadcastId):
         #endpoint for the UniFi Network API
         endpoint = f"wifi/broadcasts/{wifiBroadcastId}"
-        # payload for the PUT request, need to toggle the hideName boolean value
-        # To know its current state, I check the current value in the database.
-        cur, con = self._dbConnection() # Establsish db connection
-        result = cur.execute(
-            '''SELECT hideName FROM tbl_WifiBroadcasts WHERE broadcastId = ?''',
-            (wifiBroadcastId,)
-        )
-        result = result.fetchone() # get tuple from result
-
-        if not result: # making sure that there is a result, otherwise close the connection and return error message.
-            con.close()
-            return{
-                "successful": False,
-                "message": f"Couldn't find wifi broadcast with id {wifiBroadcastId}."
-            }
-        result = result[0] # get the result from the tuple for the value of hideName currently
-        # the value we need to set in the payload below has to be the opposite
-        hideNameVal = not bool(result)
-
-        # Creating the payload for the PUT request with the new value for hideName
-        payload = json.dumps({
-            "hideName": hideNameVal
-        })
-
         # Get the headers from the protected method
         headers = self._getHeaders()
         # Form the base url for the API request
         url = f"{self._baseURL}/{endpoint}"
+        
+        # payload for the PUT request, need to toggle the hideName boolean value
+        # To know its current state, I check the current value in the database.
+        cur, con = self._dbConnection() # Establsish db connection
         try:
+            result = cur.execute(
+            '''SELECT hideName FROM tbl_WifiBroadcasts WHERE broadcastId = ?''',
+            (wifiBroadcastId,)
+            )
+            result = result.fetchone() # get tuple from result
+
+            if not result: # making sure that there is a result, otherwise return error message.
+                return{
+                    "successful": False,
+                    "message": f"Couldn't find wifi broadcast with id {wifiBroadcastId}.",
+                    "errors": []
+                }
+            result = result[0] # get the result from the tuple for the value of hideName currently
+            # the value we need to set in the payload below has to be the opposite
+            hideNameVal = not bool(result)
+
+            # Creating the payload for the PUT request with the new value for hideName
+            payload = json.dumps({
+                "hideName": hideNameVal
+            })
+        
             # Make the PUT request to UniFi Network API
             response = self._client.put(url, headers=headers, content=payload)
-            if response.status_code == 200:
-                # Update the database to reflect the new value for hideName
-                cur.execute(
-                    '''UPDATE tbl_WifiBroadcasts SET hideName = ? where broadcastId = ?''',
-                    (hideNameVal, wifiBroadcastId)
-                )
-                # create a network audit log for this action by calling the protected method
-                self._createNetworkAuditLog(cur, con, wifiBroadcastId, "WIFI", hideNameVal)
-                con.commit() #Commit transaction and save changes for both the hideName update and the audit log record
-                # return success message
-                return {
-                    "successful": True,
-                    "message": f"SSID broadcasting has been {'disabled' if hideNameVal else 'enabled'}."
-                }
-            else: # handle when the response code is not 200, not successful.
+            if response.status_code != 200:
+                # handle when the response code is not 200, not successful.
                 return {
                     "successful": False,
-                    "message": f"PUT request to toggle SSID broadcasting failed: {response.status_code}, {response.text}"
+                    "message": f"PUT request to toggle SSID broadcasting failed.",
+                    "errors": [f"Status code: {response.status_code}", f"Response: {response.text}"]
                 }
-        except httpx.RequestError as requestErrorMessage:
-            return{
-                "successful": False,
-                "message": f"PUT request to toggle SSID broadcasting failed: {requestErrorMessage}"
+            
+            # Update the database to reflect the new value for hideName
+            cur.execute(
+                '''UPDATE tbl_WifiBroadcasts SET hideName = ? where broadcastId = ?''',
+                (hideNameVal, wifiBroadcastId)
+            )
+            # create a network audit log for this action by calling the protected method
+            self._createNetworkAuditLog(cur, con, wifiBroadcastId, "WIFI", hideNameVal)
+            con.commit() #Commit transaction and save changes for both the hideName update and the audit log record
+            # return success message
+            return {
+                "successful": True,
+                "message": f"SSID broadcasting has been {'disabled' if hideNameVal else 'enabled'}.",
+                "errors": []
             }
-        except sqlite3.Error as dbErrorMessage:
+        except Exception as error: # catch all exceptions and return error message
             return {
                 "successful": False,
-                "message": f"Database error while toggling SSID broadcasting: {dbErrorMessage}"
+                "message": f"Error occured while toggling ssid broadcasting.",
+                "errors": [str(error)]
             }
         finally:
             con.close() # close the database connection
